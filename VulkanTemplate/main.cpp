@@ -30,6 +30,7 @@ public:
 
 	const std::vector<const char*> validationLayers = {
 		"VK_LAYER_KHRONOS_validation"
+		//, "VK_LAYER_LUNARG_api_dump"		// display api call
 	};
 
 	const std::vector<const char*> deviceExtensions = {
@@ -125,19 +126,19 @@ private:
 	{
 		InitWindow();
 
-		CreateInstance();
-		SetupDebugMessenger();
-		CreateSurface();
-		PickPhysicalDevice();
-		CreateLogicalDevice();
-		CreateSwapChain();
-		CreateImageViews();
-		CreateRenderPass();
-		CreateGraphicsPipeline();
-		CreateFrameBuffers();
-		CreateCommandPool();
-		CreateCommandBuffers();
-		CreateSyncObjects();
+		CreateInstance();			// 1
+		SetupDebugMessenger();		// 2
+		CreateSurface();			// 3
+		PickPhysicalDevice();		// 4
+		CreateLogicalDevice();		// 5
+		CreateSwapChain();			// 6
+		CreateImageViews();			// 7
+		CreateRenderPass();			// 8
+		CreateGraphicsPipeline();	// 9
+		CreateFrameBuffers();		// 10
+		CreateCommandPool();		// 11
+		CreateCommandBuffers();		// 12
+		CreateSyncObjects();		// 13
 	}
 
 	void MainLoop()
@@ -795,14 +796,14 @@ private:
 		vertexInputInfo.vertexAttributeDescriptionCount = 0;
 		vertexInputInfo.pVertexAttributeDescriptions = nullptr;	// Optional
 
-		// Input Assembly
+		// 3. Input Assembly
 		// primitiveRestartEnable 옵션이 VK_TRUE 이면, 인덱스버퍼의 특수한 index 0xFFFF or 0xFFFFFFFF 를 사용해서 line 과 triangle topology mode를 사용할 수 있다.
 		VkPipelineInputAssemblyStateCreateInfo inputAssembly = {};
 		inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
 		inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 		inputAssembly.primitiveRestartEnable = VK_FALSE;
 
-		// 3. Viewports and scissors
+		// 4. Viewports and scissors
 		// SwapChain의 이미지 사이즈가 이 클래스에 정의된 상수 WIDTH, HEIGHT와 다를 수 있다는 것을 기억 해야함.
 		// 그리고 Viewports 사이즈는 SwapChain 크기 이하로 마추면 됨.
 		// [minDepth ~ maxDepth] 는 [0.0 ~ 1.0] 이며 특별한 경우가 아니면 이 범위로 사용하면 된다.
@@ -827,7 +828,7 @@ private:
 		viewportState.scissorCount = 1;
 		viewportState.pScissors = &scissor;
 
-		// 4. Rasterizer
+		// 5. Rasterizer
 		VkPipelineRasterizationStateCreateInfo rasterizer = {};
 		rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
 		rasterizer.depthClampEnable = VK_FALSE;		// 이 값이 VK_TRUE 면 Near나 Far을 벗어나는 영역을 [0.0 ~ 1.0]으로 Clamp 시켜줌.(쉐도우맵에서 유용)
@@ -841,7 +842,7 @@ private:
 		rasterizer.depthBiasClamp = 0.0f;				// Optional
 		rasterizer.depthBiasSlopeFactor = 0.0f;			// Optional
 
-		// 5. Multisampling
+		// 6. Multisampling
 		// 현재는 사용하지 않음
 		VkPipelineMultisampleStateCreateInfo multisampling = {};
 		multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
@@ -852,7 +853,7 @@ private:
 		multisampling.alphaToCoverageEnable = VK_FALSE;		// Optional
 		multisampling.alphaToOneEnable = VK_FALSE;			// Optional
 
-		// 6. Depth and stencil testing
+		// 7. Depth and stencil testing
 		// 현재는 사용하지 않음
 		// VkPipelineDepthStencilStateCreateInfo depthStencil = {};
 
