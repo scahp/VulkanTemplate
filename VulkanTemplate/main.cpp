@@ -857,7 +857,7 @@ private:
 		// 현재는 사용하지 않음
 		// VkPipelineDepthStencilStateCreateInfo depthStencil = {};
 
-		// 7. Color blending
+		// 8. Color blending
 		// 2가지 방식의 blending 이 있음
 		// 1). 기존과 새로운 값을 섞어서 최종색을 만들어낸다.
 		// 2). 기존과 새로운 값을 비트 연산으로 결합한다.
@@ -915,7 +915,7 @@ private:
 		colorBlending.blendConstants[2] = 0.0f;		// Optional
 		colorBlending.blendConstants[3] = 0.0f;		// Optional
 
-		// 8. Dynamic state
+		// 9. Dynamic state
 		// 이전에 정의한 state에서 제한된 범위 내에서 새로운 pipeline을 만들지 않고 state를 변경할 수 있음. (viewport size, line width, blend constants)
 		// 이것을 하고싶으면 Dynamic state를 만들어야 함. 이경우 Pipeline에 설정된 값은 무시되고, 매 렌더링시에 새로 설정해줘야 함.
 		VkDynamicState dynamicStates[] = {
