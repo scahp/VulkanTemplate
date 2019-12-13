@@ -928,7 +928,7 @@ private:
 		//dynamicState.dynamicStateCount = 2;
 		//dynamicState.pDynamicStates = dynamicStates;
 
-		// 9. Pipeline layout
+		// 10. Pipeline layout
 		// 쉐이더에 전달된 Uniform 들을 명세하기 위한 오브젝트
 		// 이 오브젝트는 프로그램 실행동안 계속해서 참조되므로 cleanup 에서 제거해줌
 		VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
