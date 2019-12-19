@@ -1,4 +1,4 @@
-﻿// https://vulkan-tutorial.com/Drawing_a_triangle
+﻿// https://vulkan-tutorial.com/Vertex_buffers/Staging_buffer 부터 해야함
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -8,15 +8,60 @@
 #include <functional>
 #include <cstdlib>
 
-#include "jAssert.h"
 #include <vector>
 #include <optional>
 #include <set>
 #include <algorithm>
 #include <string>
 #include <fstream>
+#include <array>
+
+#include "jAssert.h"
+#include "jSimpleType.h"
 
 #define MULTIPLE_FRAME 1
+
+struct jVertex
+{
+	jSimpleVec2 pos;
+	jSimpleVec3 color;
+
+	static VkVertexInputBindingDescription GetBindingDescription()
+	{
+		VkVertexInputBindingDescription bindingDescription = {};
+		// 모든 데이터가 하나의 배열에 있어서 binding index는 0
+		bindingDescription.binding = 0;
+		bindingDescription.stride = sizeof(jVertex);
+
+		// VK_VERTEX_INPUT_RATE_VERTEX : 각각 버택스 마다 다음 데이터로 이동
+		// VK_VERTEX_INPUT_RATE_INSTANCE : 각각의 인스턴스 마다 다음 데이터로 이동
+		bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+		return bindingDescription;
+	};
+
+	static std::array<VkVertexInputAttributeDescription, 2> GetAttributeDescriptions()
+	{
+		std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions = {};
+		attributeDescriptions[0].binding = 0;
+		attributeDescriptions[0].location = 0;
+
+		//float: VK_FORMAT_R32_SFLOAT
+		//vec2 : VK_FORMAT_R32G32_SFLOAT
+		//vec3 : VK_FORMAT_R32G32B32_SFLOAT
+		//vec4 : VK_FORMAT_R32G32B32A32_SFLOAT
+		//ivec2: VK_FORMAT_R32G32_SINT, a 2-component vector of 32-bit signed integers
+		//uvec4: VK_FORMAT_R32G32B32A32_UINT, a 4-component vector of 32-bit unsigned integers
+		//double: VK_FORMAT_R64_SFLOAT, a double-precision (64-bit) float
+		attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+		attributeDescriptions[0].offset = offsetof(jVertex, pos);
+
+		attributeDescriptions[1].binding = 0;
+		attributeDescriptions[1].location = 1;
+		attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+		attributeDescriptions[1].offset = offsetof(jVertex, color);
+		return attributeDescriptions;
+	}
+};
 
 class HelloTriangleApplication
 {
@@ -35,6 +80,12 @@ public:
 
 	const std::vector<const char*> deviceExtensions = {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME
+	};
+
+	const std::vector<jVertex> vertices = {
+		{{0.0f, -0.5f}, {1.0f, 1.0f, 1.0f}},
+		{{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+		{{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
 	};
 
 #ifdef NDEBUG
@@ -137,8 +188,9 @@ private:
 		CreateGraphicsPipeline();	// 9
 		CreateFrameBuffers();		// 10
 		CreateCommandPool();		// 11
-		CreateCommandBuffers();		// 12
-		CreateSyncObjects();		// 13
+		CreateVertexBuffer();		// 12
+		CreateCommandBuffers();		// 13
+		CreateSyncObjects();		// 14
 	}
 
 	void MainLoop()
@@ -156,6 +208,8 @@ private:
 	void Cleanup()
 	{
 		CleanupSwapChain();
+		vkDestroyBuffer(device, vertexBuffer, nullptr);
+		vkFreeMemory(device, vertexBufferMemory, nullptr);
 
 #if MULTIPLE_FRAME
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
@@ -791,10 +845,14 @@ private:
 		// 2). Attribute descriptions : 버택스 쉐이더 전달되는 attributes 의 타입. 그것을 로드할 바인딩과 오프셋
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
 		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-		vertexInputInfo.vertexBindingDescriptionCount = 0;
-		vertexInputInfo.pVertexBindingDescriptions = nullptr;	// Optional
-		vertexInputInfo.vertexAttributeDescriptionCount = 0;
-		vertexInputInfo.pVertexAttributeDescriptions = nullptr;	// Optional
+
+		auto bindingDescription = jVertex::GetBindingDescription();
+		auto attributeDescription = jVertex::GetAttributeDescriptions();
+
+		vertexInputInfo.vertexBindingDescriptionCount = 1;
+		vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+		vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescription.size());
+		vertexInputInfo.pVertexAttributeDescriptions = attributeDescription.data();
 
 		// 3. Input Assembly
 		// primitiveRestartEnable 옵션이 VK_TRUE 이면, 인덱스버퍼의 특수한 index 0xFFFF or 0xFFFFFFFF 를 사용해서 line 과 triangle topology mode를 사용할 수 있다.
@@ -1053,6 +1111,67 @@ private:
 		return true;
 	}
 
+	bool CreateVertexBuffer()
+	{
+		VkBufferCreateInfo bufferInfo = {};
+		bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		bufferInfo.size = sizeof(vertices[0]) * vertices.size();
+
+		// OR 비트연산자를 사용해 다양한 버퍼용도로 사용할 수 있음.
+		bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+
+		// swapchain과 마찬가지로 버퍼또한 특정 queue family가 소유하거나 혹은 여러 Queue에서 공유됨
+		bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+		if (!ensure(vkCreateBuffer(device, &bufferInfo, nullptr, &vertexBuffer) == VK_SUCCESS))
+			return false;
+
+		VkMemoryRequirements memRequirements;
+		vkGetBufferMemoryRequirements(device, vertexBuffer, &memRequirements);
+
+		VkMemoryAllocateInfo allocInfo = {};
+		allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocInfo.allocationSize = memRequirements.size;
+		allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits
+			, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+		if (!ensure(vkAllocateMemory(device, &allocInfo, nullptr, &vertexBufferMemory) == VK_SUCCESS))
+			return false;
+
+		// 마지막 파라메터 0은 메모리 영역의 offset 임.
+		// 이 값이 0이 아니면 memRequirements.alignment 로 나눠야 함. (align 되어있다는 의미)
+		vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0);
+
+		void* data;
+		// size 항목에 VK_WHOLE_SIZE  를 넣어서 모든 메모리를 잡을 수도 있음.
+		vkMapMemory(device, vertexBufferMemory, 0, bufferInfo.size, 0, &data);
+		memcpy(data, vertices.data(), (size_t)bufferInfo.size);
+		vkUnmapMemory(device, vertexBufferMemory);
+
+		// Map -> Unmap 했다가 메모리에 데이터가 즉시 반영되는게 아님
+		// 바로 사용하려면 아래 2가지 방법이 있음.
+		// 1. VK_MEMORY_PROPERTY_HOST_COHERENT_BIT 사용 (항상 반영, 약간 느릴 수도)
+		// 2. 쓰기 이후 vkFlushMappedMemoryRanges 호출, 읽기 이후 vkInvalidateMappedMemoryRanges 호출
+		// 위의 2가지 방법을 사용해도 이 데이터가 GPU에 바로 보인다고 보장할 수는 없지만 다음 vkQueueSubmit 호출 전에는 완료될 것을 보장함.
+
+		return true;
+	}
+
+	uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties)
+	{
+		VkPhysicalDeviceMemoryProperties memProperties;
+		vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+
+		for (uint32_t i = 0; i < memProperties.memoryTypeCount; ++i)
+		{
+			if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
+				return i;
+		}
+
+		check(0);	// failed to find sutable memory type!
+		return 0;
+	}
+
 	bool CreateCommandBuffers()
 	{
 		commandBuffers.resize(swapChainFramebuffers.size());
@@ -1107,7 +1226,12 @@ private:
 
 			// Basic drawing commands
 			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
-			vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+
+			VkBuffer vertexBuffers[] = { vertexBuffer };
+			VkDeviceSize offsets[] = { 0 };
+			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
+
+			vkCmdDraw(commandBuffers[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0);
 
 			// Finishing up
 			vkCmdEndRenderPass(commandBuffers[i]);
@@ -1391,6 +1515,9 @@ private:
 #endif // MULTIPLE_FRAME
 
 	bool framebufferResized = false;
+
+	VkBuffer vertexBuffer;
+	VkDeviceMemory vertexBufferMemory;
 };
 
 int main()

@@ -167,6 +167,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="jAssert.h" />
+    <ClInclude Include="jSimpleType.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\compile.bat" />

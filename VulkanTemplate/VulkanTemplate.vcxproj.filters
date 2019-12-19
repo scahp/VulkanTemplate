@@ -26,6 +26,9 @@
     <ClInclude Include="jAssert.h">
       <Filter>소스 파일</Filter>
     </ClInclude>
+    <ClInclude Include="jSimpleType.h">
+      <Filter>소스 파일</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\compile.bat">
