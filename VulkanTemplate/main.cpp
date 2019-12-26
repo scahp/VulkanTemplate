@@ -1142,6 +1142,11 @@ private:
 		CreateBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
 			, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer, vertexBufferMemory);
 
+		CopyBuffer(stagingBuffer, vertexBuffer, bufferSize);
+
+		vkDestroyBuffer(device, stagingBuffer, nullptr);
+		vkFreeMemory(device, stagingBufferMemory, nullptr);
+
 		return true;
 	}
 
@@ -1157,7 +1162,7 @@ private:
 		VkCommandBuffer commandBuffer;
 		vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
 
-		VkCommandBufferBeginInfo beginInfo;
+		VkCommandBufferBeginInfo beginInfo = {};
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
@@ -1185,7 +1190,7 @@ private:
 		// fence를 사용하는 방법이 여러개의 전송을 동시에 하하고 마치는 것을 기다릴 수 있게 해주기 때문에 그것을 사용함.
 		vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 
-		// todo
+		return true;
 	}
 
 	uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties)
