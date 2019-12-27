@@ -1,5 +1,7 @@
-﻿// https://vulkan-tutorial.com/en/Vertex_buffers/Index_buffer 부터 해야함
-// 여기부터 : There are only two notable differences. The bufferSize is now equal to the number of indices times the size of the
+﻿// https://vulkan-tutorial.com/en/Uniform_buffers/Descriptor_layout_and_buffer 부터 해야함
+// 여기부터 : struct UniformBufferObject { 이거 만들어야함.
+
+#include <pch.h>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>

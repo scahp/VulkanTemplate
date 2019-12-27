@@ -16,18 +16,39 @@
     <Filter Include="Shaders">
       <UniqueIdentifier>{cb2be680-abe9-4b97-8677-2a3f53c3f5d5}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Generic">
+      <UniqueIdentifier>{2a8de75e-c6cd-4bff-9db1-e603b2f97f7b}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
+    <ClCompile Include="Matrix.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="Vector.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="pch.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="Vector.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="Matrix.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
     <ClInclude Include="jAssert.h">
-      <Filter>소스 파일</Filter>
+      <Filter>헤더 파일</Filter>
     </ClInclude>
     <ClInclude Include="jSimpleType.h">
-      <Filter>소스 파일</Filter>
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="Generic\TemplateUtility.h">
+      <Filter>Generic</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
