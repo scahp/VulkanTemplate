@@ -1,5 +1,4 @@
-﻿// https://vulkan-tutorial.com/en/Uniform_buffers/Descriptor_layout_and_buffer 부터 해야함
-// 여기부터 : struct UniformBufferObject { 이거 만들어야함.
+﻿// https://vulkan-tutorial.com/Uniform_buffers/Descriptor_pool_and_sets 처음부터 해야함
 
 #include <pch.h>
 
@@ -18,9 +17,11 @@
 #include <string>
 #include <fstream>
 #include <array>
+#include <chrono>
 
 #include "jAssert.h"
 #include "jSimpleType.h"
+#include "Camera.h"
 
 #define MULTIPLE_FRAME 1
 
@@ -64,6 +65,42 @@ struct jVertex
 		attributeDescriptions[1].offset = offsetof(jVertex, color);
 		return attributeDescriptions;
 	}
+};
+
+// Alignment
+// 1. 스칼라 타입은 4 bytes align 필요.				Scalars have to be aligned by N(= 4 bytes given 32 bit floats).
+// 2. vec2 타입은 8 bytes align 필요.				A vec2 must be aligned by 2N(= 8 bytes)
+// 3. vec3 or vec4 타입은 16 bytes align 필요.		A vec3 or vec4 must be aligned by 4N(= 16 bytes)
+// 4. 중첩 구조(stuct 같은 것이 멤버인 경우)의 경우 멤버의 기본정렬을 16 bytes 배수로 올림하여 align 되어야 함. 
+//													A nested structure must be aligned by the base alignment of its members rounded up to a multiple of 16.
+//		예로 C++ 와 Shader 쪽에서 아래와 같이 선언 되어있다고 하자.
+//		C++ : struct Foo { Vector2 v; }; struct jUniformBufferObject { Foo f1; Foo f2; };
+//		Shader : struct Foo { vec2 v; }; layout(binding = 0) uniform jUniformBufferObject { Foo f1; Foo f2; };
+//		Foo는 8 bytes 이지만 C++ 에서 아래와 같이 align을 16으로 맞춰줘야 한다. 이유는 중첩구조(struct 형태의 멤버변수)이기 때문.
+//			-> 이렇게 해줘야 함. struct jUniformBufferObject { Foo f1; alignas(16) Foo f2; };
+// 5. mat4 타입은 vec4 처럼 16 bytes align 필요.		A mat4 matrix must have the same alignment as a vec4.
+// 자세한 설명 : https://www.khronos.org/registry/vulkan/specs/1.1-extensions/html/chap14.html#interfaces-resources-layout
+// 아래와 같은 경우 맨 처음 등장하는 Vector2 때문에 뒤에나오는 Matrix 가 16 Bytes align 되지 못함.
+//struct jUniformBufferObject		|		layout(binding = 0) uniform UniformBufferObject
+//{									|		{
+//	Vector2 foo;					|			vec2 foo;
+//	Matrix Model;					|			mat4 model;
+//	Matrix View;					|			mat4 view;
+//	Matrix Proj;					|			mat4 proj
+//};								|		};
+// 이 경우 아래와 같이 alignas(16) 을 써줘서 model 부터 16 bytes align 하면 정상작동 할 수 있음.
+//struct jUniformBufferObject		|		layout(binding = 0) uniform UniformBufferObject
+//{									|		{
+//	Vector2 foo;					|			vec2 foo;
+//	alignas(16)Matrix Model;		|			mat4 model;
+//	Matrix View;					|			mat4 view;
+//	Matrix Proj;					|			mat4 proj
+//};								|		};
+struct jUniformBufferObject
+{
+	Matrix Model;
+	Matrix View;
+	Matrix Proj;
 };
 
 class HelloTriangleApplication
@@ -193,13 +230,17 @@ private:
 		CreateSwapChain();			// 6
 		CreateImageViews();			// 7
 		CreateRenderPass();			// 8
-		CreateGraphicsPipeline();	// 9
-		CreateFrameBuffers();		// 10
-		CreateCommandPool();		// 11
-		CreateVertexBuffer();		// 12
-		CreateIndexBuffer();		// 13
-		CreateCommandBuffers();		// 14
-		CreateSyncObjects();		// 15
+		CreateDescriptorSetLayout();// 9
+		CreateGraphicsPipeline();	// 10
+		CreateFrameBuffers();		// 11
+		CreateCommandPool();		// 12
+		CreateVertexBuffer();		// 13
+		CreateIndexBuffer();		// 14
+		CreateUniformBuffers();		// 15
+		CreateDescriptorPool();		// 16
+		CreateDescriptorSets();		// 17
+		CreateCommandBuffers();		// 18
+		CreateSyncObjects();		// 19
 	}
 
 	void MainLoop()
@@ -217,6 +258,8 @@ private:
 	void Cleanup()
 	{
 		CleanupSwapChain();
+
+		vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 
 		vkDestroyBuffer(device, indexBuffer, nullptr);
 		vkFreeMemory(device, indexBufferMemory, nullptr);
@@ -826,6 +869,29 @@ private:
 		return true;
 	}
 
+	bool CreateDescriptorSetLayout()
+	{
+		VkDescriptorSetLayoutBinding UboLayoutBinding = {};
+		UboLayoutBinding.binding = 0;
+		UboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		UboLayoutBinding.descriptorCount = 1;
+
+		// VkShaderStageFlagBits 에 값을 | 연산으로 조합가능
+		//  - VK_SHADER_STAGE_ALL_GRAPHICS 로 설정하면 모든곳에서 사용
+		UboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+		UboLayoutBinding.pImmutableSamplers = nullptr;	// Optional (이미지 샘플링 시에서만 사용)
+
+		VkDescriptorSetLayoutCreateInfo layoutInfo = {};
+		layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		layoutInfo.bindingCount = 1;
+		layoutInfo.pBindings = &UboLayoutBinding;
+
+		if (!ensure(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) == VK_SUCCESS))
+			return false;
+
+		return true;
+	}
+
 	bool CreateGraphicsPipeline()
 	{
 		// 1. Create Shader
@@ -907,7 +973,8 @@ private:
 		rasterizer.polygonMode = VK_POLYGON_MODE_FILL;	// FILL, LINE, POINT 세가지가 있음
 		rasterizer.lineWidth = 1.0f;
 		rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-		rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+		//rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+		rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 		rasterizer.depthBiasEnable = VK_FALSE;			// 쉐도우맵 용
 		rasterizer.depthBiasConstantFactor = 0.0f;		// Optional
 		rasterizer.depthBiasClamp = 0.0f;				// Optional
@@ -1004,8 +1071,10 @@ private:
 		// 이 오브젝트는 프로그램 실행동안 계속해서 참조되므로 cleanup 에서 제거해줌
 		VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
 		pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-		pipelineLayoutInfo.setLayoutCount = 0;				// Optional
-		pipelineLayoutInfo.pSetLayouts = nullptr;			// Optional
+		pipelineLayoutInfo.setLayoutCount = 0;
+		pipelineLayoutInfo.pSetLayouts = nullptr;
+		pipelineLayoutInfo.setLayoutCount = 1;
+		pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
 		pipelineLayoutInfo.pushConstantRangeCount = 0;		// Optional		// 쉐이더에 값을 constant 값을 전달 할 수 있음. 이후에 배움
 		pipelineLayoutInfo.pPushConstantRanges = nullptr;	// Optional
 		if (!ensure(vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) == VK_SUCCESS))
@@ -1244,6 +1313,77 @@ private:
 		return 0;
 	}
 
+	bool CreateUniformBuffers()
+	{
+		VkDeviceSize bufferSize = sizeof(jUniformBufferObject);
+	
+		uniformBuffers.resize(swapChainImages.size());
+		uniformBuffersMemory.resize(swapChainImages.size());
+
+		for (size_t i = 0; i < swapChainImages.size(); ++i)
+		{
+			CreateBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+				| VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i], uniformBuffersMemory[i]);
+		}
+		return true;
+	}
+
+	bool CreateDescriptorPool()
+	{
+		VkDescriptorPoolSize poolSize = {};
+		poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		poolSize.descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+
+		VkDescriptorPoolCreateInfo poolInfo = {};
+		poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+		poolInfo.poolSizeCount = 1;
+		poolInfo.pPoolSizes = &poolSize;
+		poolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size());
+		poolInfo.flags = 0;		// Descriptor Set을 만들고나서 더 이상 손대지 않을거라 그냥 기본값 0으로 설정
+
+		if (!ensure(vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) == VK_SUCCESS))
+			return false;
+
+		return true;
+	}
+
+	bool CreateDescriptorSets()
+	{
+		std::vector<VkDescriptorSetLayout> layouts(swapChainImages.size(), descriptorSetLayout);
+		VkDescriptorSetAllocateInfo allocInfo = {};
+		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+		allocInfo.descriptorPool = descriptorPool;
+		allocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
+		allocInfo.pSetLayouts = layouts.data();
+
+		descriptorSets.resize(swapChainImages.size());
+		if (!ensure(vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) == VK_SUCCESS))
+			return false;
+
+		for (size_t i = 0; i < swapChainImages.size(); ++i)
+		{
+			VkDescriptorBufferInfo bufferInfo = {};
+			bufferInfo.buffer = uniformBuffers[i];
+			bufferInfo.offset = 0;
+			bufferInfo.range = sizeof(jUniformBufferObject);		// 전체 사이즈라면 VK_WHOLE_SIZE 이거 가능
+
+			VkWriteDescriptorSet descriptorWrite = {};
+			descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			descriptorWrite.dstSet = descriptorSets[i];
+			descriptorWrite.dstBinding = 0;
+			descriptorWrite.dstArrayElement = 0;
+			descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+			descriptorWrite.descriptorCount = 1;
+			descriptorWrite.pBufferInfo = &bufferInfo;		// 현재는 Buffer 기반 Desriptor 이므로 이것을 사용
+			descriptorWrite.pImageInfo = nullptr;			// Optional	(Image Data 기반에 사용)
+			descriptorWrite.pTexelBufferView = nullptr;		// Optional (Buffer View 기반에 사용)
+
+			vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+		}
+
+		return true;
+	}
+
 	bool CreateCommandBuffers()
 	{
 		commandBuffers.resize(swapChainFramebuffers.size());
@@ -1304,6 +1444,8 @@ private:
 			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
 
 			vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[i], 0, nullptr);
 
 			//vkCmdDraw(commandBuffers[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0);			// VertexBuffer 만 있는 경우 호출
 			vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
@@ -1403,6 +1545,8 @@ private:
 			return false;
 		}
 
+		UpdateUniformBuffer(imageIndex);
+
 		// Submitting the command buffer
 		VkSubmitInfo submitInfo = {};
 		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1493,6 +1637,14 @@ private:
 			vkDestroyImageView(device, imageView, nullptr);
 
 		vkDestroySwapchainKHR(device, swapChain, nullptr);
+
+		for (size_t i = 0; i < swapChainImages.size(); ++i)
+		{
+			vkDestroyBuffer(device, uniformBuffers[i], nullptr);
+			vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
+		}
+
+		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 	}
 
 	void RecreateSwapChain()
@@ -1518,6 +1670,9 @@ private:
 									// Viewport나 Scissor Rectangle size 가 Graphics Pipeline 에 있으므로 재생성.
 									// (DynamicState로 Viewport 와 Scissor 사용하고 변경점이 이것 뿐이면 재생성 피할수 있음)
 		CreateFrameBuffers();		// Swapchain images 과 연관 있어서 다시 만듬
+		CreateUniformBuffers();
+		CreateDescriptorPool();
+		CreateDescriptorSets();
 		CreateCommandBuffers();		// Swapchain images 과 연관 있어서 다시 만듬
 	}
 
@@ -1553,6 +1708,32 @@ private:
 		vkBindBufferMemory(device, buffer, bufferMemory, 0);
 
 		return true;
+	}
+
+	void UpdateUniformBuffer(uint32_t currentImage)
+	{
+		static auto startTime = std::chrono::high_resolution_clock::now();
+
+		auto currentTime = std::chrono::high_resolution_clock::now();
+		float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+
+		jUniformBufferObject ubo = {};
+		ubo.Model.SetIdentity();
+		ubo.View.SetIdentity();
+		ubo.Proj.SetIdentity();
+		ubo.Model = Matrix::MakeRotate(Vector(0.0f, 0.0f, 1.0f), time * DegreeToRadian(90.0f)).GetTranspose();
+		ubo.View = jCameraUtil::CreateViewMatrix(Vector(2.0f, 2.0f, 2.0f), Vector(0.0f, 0.0f, 0.0f), Vector(0.0f, 0.0f, 1.0f)).GetTranspose();
+		ubo.Proj = jCameraUtil::CreatePerspectiveMatrix(static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height)
+			, DegreeToRadian(45.0f), 10.0f, 0.1f).GetTranspose();
+		ubo.Proj.m[1][1] *= -1;
+
+		//ubo.Model.SetTranslate({ 0.2f, 0.2f,0.2f });
+		//ubo.Model = ubo.Model.MakeRotateZ(time * DegreeToRadian(90.0f));
+
+		void* data;
+		vkMapMemory(device, uniformBuffersMemory[currentImage], 0, sizeof(ubo), 0, &data);
+		memcpy(data, &ubo, sizeof(ubo));
+		vkUnmapMemory(device, uniformBuffersMemory[currentImage]);
 	}
 
 	GLFWwindow* window = nullptr;
@@ -1598,6 +1779,7 @@ private:
 
 	// GraphicsPipieline
 	VkRenderPass renderPass;
+	VkDescriptorSetLayout descriptorSetLayout;
 	VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
 
@@ -1628,6 +1810,19 @@ private:
 	VkDeviceMemory vertexBufferMemory;
 	VkBuffer indexBuffer;
 	VkDeviceMemory indexBufferMemory;
+
+	std::vector<VkBuffer> uniformBuffers;
+	std::vector<VkDeviceMemory> uniformBuffersMemory;
+
+	// Descriptor : 쉐이더가 버퍼나 이미지 같은 리소스에 자유롭게 접근하는 방법. 디스크립터의 사용방법은 아래 3가지로 구성됨.
+	//	1. Pipeline 생성 도중 Descriptor Set Layout 명세
+	//	2. Descriptor Pool로 Descriptor Set 생성
+	//	3. Descriptor Set을 렌더링 하는 동안 묶어 주기.
+	//
+	// Descriptor set layout	: 파이프라인을 통해 접근할 리소스 타입을 명세함
+	// Descriptor set			: Descriptor 에 묶일 실제 버퍼나 이미지 리소스를 명세함.
+	VkDescriptorPool descriptorPool;
+	std::vector<VkDescriptorSet> descriptorSets;		// DescriptorPool 이 소멸될때 자동으로 소멸되므로 따로 소멸시킬 필요없음.
 };
 
 int main()
