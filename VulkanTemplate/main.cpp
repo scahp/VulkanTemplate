@@ -1,9 +1,12 @@
-﻿// https://vulkan-tutorial.com/Uniform_buffers/Descriptor_pool_and_sets 처음부터 해야함
+﻿// https://vulkan-tutorial.com/en/Texture_mapping/Images VkImageCreateInfo imageInfo = {};
 
 #include <pch.h>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
 #include <iostream>
 #include <stdexcept>
@@ -234,13 +237,14 @@ private:
 		CreateGraphicsPipeline();	// 10
 		CreateFrameBuffers();		// 11
 		CreateCommandPool();		// 12
-		CreateVertexBuffer();		// 13
-		CreateIndexBuffer();		// 14
-		CreateUniformBuffers();		// 15
-		CreateDescriptorPool();		// 16
-		CreateDescriptorSets();		// 17
-		CreateCommandBuffers();		// 18
-		CreateSyncObjects();		// 19
+		CreateTextureImage();		// 13
+		CreateVertexBuffer();		// 14
+		CreateIndexBuffer();		// 15
+		CreateUniformBuffers();		// 16
+		CreateDescriptorPool();		// 17
+		CreateDescriptorSets();		// 18
+		CreateCommandBuffers();		// 19
+		CreateSyncObjects();		// 20
 	}
 
 	void MainLoop()
@@ -1193,6 +1197,34 @@ private:
 		return true;
 	}
 
+	bool CreateTextureImage()
+	{
+		int texWidth, texHeight, texChannels;
+		stbi_uc* pixels = stbi_load("Textures/texture.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+		VkDeviceSize imageSize = texWidth * texHeight * 4;
+
+		if (!ensure(pixels))
+			return false;
+
+		VkBuffer stagingBuffer;
+		VkDeviceMemory stagingBufferMemory;
+
+		CreateBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+			, stagingBuffer, stagingBufferMemory);
+
+		void* data;
+		vkMapMemory(device, stagingBufferMemory, 0, imageSize, 0, &data);
+		memcpy(data, pixels, static_cast<size_t>(imageSize));
+		vkUnmapMemory(device, stagingBufferMemory);
+
+		stbi_image_free(pixels);
+
+		VkImageCreateInfo imageInfo = {};
+		// 여기서 부터 해야함.
+
+		return true;
+	}
+
 	bool CreateVertexBuffer()
 	{
 		VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
@@ -1823,6 +1855,9 @@ private:
 	// Descriptor set			: Descriptor 에 묶일 실제 버퍼나 이미지 리소스를 명세함.
 	VkDescriptorPool descriptorPool;
 	std::vector<VkDescriptorSet> descriptorSets;		// DescriptorPool 이 소멸될때 자동으로 소멸되므로 따로 소멸시킬 필요없음.
+
+	VkImage textureImage;
+	VkDeviceMemory textureImageMemory;
 };
 
 int main()

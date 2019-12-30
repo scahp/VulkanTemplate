@@ -175,6 +175,7 @@
     <ClInclude Include="jSimpleType.h" />
     <ClInclude Include="Matrix.h" />
     <ClInclude Include="pch.h" />
+    <ClInclude Include="stb_image.h" />
     <ClInclude Include="Vector.h" />
   </ItemGroup>
   <ItemGroup>
