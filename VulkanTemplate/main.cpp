@@ -8,6 +8,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+#define TINYOBJLOADER_IMPLEMENTATION
+#include <tiny_obj_loader.h>
+
 #include <iostream>
 #include <stdexcept>
 #include <functional>
@@ -25,6 +28,8 @@
 #include "jAssert.h"
 #include "jSimpleType.h"
 #include "Camera.h"
+#include <unordered_map>
+#include <type_traits>
 
 #define MULTIPLE_FRAME 1
 #define VALIDATION_LAYER_VERBOSE 0
@@ -34,6 +39,11 @@ struct jVertex
 	jSimpleVec3 pos;
 	jSimpleVec3 color;
 	jSimpleVec2 texCoord;		// UV 는 좌상단이 (0, 0), 우하단이 (1, 1) 좌표임.
+
+	bool operator == (const jVertex& other) const
+	{
+		return ((pos == other.pos) && (color == other.color) && (texCoord == other.texCoord));
+	}
 
 	static VkVertexInputBindingDescription GetBindingDescription()
 	{
@@ -78,6 +88,35 @@ struct jVertex
 	}
 };
 
+namespace std
+{
+	template<> struct hash<jSimpleVec2>
+	{
+		size_t operator()(jSimpleVec2 const& simpleVec2) const
+		{
+			return ((hash<float>()(simpleVec2.x) ^ (hash<float>()(simpleVec2.y) << 1)) >> 1);
+		}
+	};
+
+	template<> struct hash<jSimpleVec3>
+	{
+		size_t operator()(jSimpleVec3 const& simpleVec3) const
+		{
+			return ((hash<float>()(simpleVec3.x) ^ (hash<float>()(simpleVec3.y) << 1)) >> 1)
+				^ (hash<float>()(simpleVec3.z) << 1);
+		}
+	};
+
+	template<> struct hash<jVertex>
+	{
+		size_t operator()(jVertex const& vertex) const
+		{
+			return ((hash<jSimpleVec3>()(vertex.pos) ^ (hash<jSimpleVec3>()(vertex.color) << 1)) >> 1)
+				^ (hash<jSimpleVec2>()(vertex.texCoord) << 1);
+		}
+	};
+}
+
 // Alignment
 // 1. 스칼라 타입은 4 bytes align 필요.				Scalars have to be aligned by N(= 4 bytes given 32 bit floats).
 // 2. vec2 타입은 8 bytes align 필요.				A vec2 must be aligned by 2N(= 8 bytes)
@@ -119,6 +158,9 @@ class HelloTriangleApplication
 public:
 	static constexpr int32_t WIDTH = 800;
 	static constexpr int32_t HEIGHT= 600;
+	
+	const std::string MODEL_PATH = "models/chalet.obj";
+	const std::string TEXTURE_PATH = "textures/chalet.jpg";
 
 #if MULTIPLE_FRAME
 	static constexpr int32_t MAX_FRAMES_IN_FLIGHT = 2;
@@ -131,23 +173,6 @@ public:
 
 	const std::vector<const char*> deviceExtensions = {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME
-	};
-
-	const std::vector<jVertex> vertices = {
-		{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-		{{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-		{{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-		{{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
-
-		{{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-		{{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-		{{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-		{{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
-	};
-
-	const std::vector<uint16_t> indices = {
-		0, 1, 2, 2, 3, 0,
-		4, 5, 6, 6, 7, 4
 	};
 
 #ifdef NDEBUG
@@ -255,13 +280,14 @@ private:
 		CreateTextureImage();		// 14
 		CreateTextureImageView();	// 15
 		CreateTextureSampler();		// 16
-		CreateVertexBuffer();		// 17
-		CreateIndexBuffer();		// 18
-		CreateUniformBuffers();		// 19
-		CreateDescriptorPool();		// 20
-		CreateDescriptorSets();		// 21
-		CreateCommandBuffers();		// 22
-		CreateSyncObjects();		// 23
+		LoadModel();				// 17
+		CreateVertexBuffer();		// 18
+		CreateIndexBuffer();		// 19
+		CreateUniformBuffers();		// 20
+		CreateDescriptorPool();		// 21
+		CreateDescriptorSets();		// 22
+		CreateCommandBuffers();		// 23
+		CreateSyncObjects();		// 24
 	}
 
 	void MainLoop()
@@ -1286,7 +1312,7 @@ private:
 	bool CreateTextureImage()
 	{
 		int texWidth, texHeight, texChannels;
-		stbi_uc* pixels = stbi_load("Textures/texture.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+		stbi_uc* pixels = stbi_load(TEXTURE_PATH.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 		VkDeviceSize imageSize = texWidth * texHeight * 4;
 
 		if (!ensure(pixels))
@@ -1399,6 +1425,53 @@ private:
 
 		if (!ensure(vkCreateSampler(device, &samplerInfo, nullptr, &textureSampler) == VK_SUCCESS))
 			return false;
+
+		return true;
+	}
+
+	bool LoadModel()
+	{
+		tinyobj::attrib_t attrib;
+		std::vector<tinyobj::shape_t> shapes;
+		std::vector<tinyobj::material_t> materials;
+		std::string warn, err;
+
+		if (!ensure(tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.c_str())))
+			return false;
+
+		vertices.clear();
+		vertices.clear();
+
+		std::unordered_map<jVertex, uint32_t> uniqueVertices = {};
+
+		for (const auto& shape : shapes)
+		{
+			for (const auto& index : shape.mesh.indices)
+			{
+				jVertex vertex = { };
+
+				vertex.pos = {
+					attrib.vertices[3 * index.vertex_index + 0],
+					attrib.vertices[3 * index.vertex_index + 1],
+					attrib.vertices[3 * index.vertex_index + 2]
+				};
+
+				vertex.texCoord = {
+					attrib.texcoords[2 * index.texcoord_index + 0],
+					1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+				};
+
+				vertex.color = { 1.0f, 1.0f, 1.0f };
+
+				if (uniqueVertices.count(vertex) == 0)
+				{
+					uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
+					vertices.push_back(vertex);
+				}
+
+				indices.push_back(uniqueVertices[vertex]);
+			}
+		}
 
 		return true;
 	}
@@ -1863,7 +1936,7 @@ private:
 			VkDeviceSize offsets[] = { 0 };
 			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
 
-			vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+			vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
 			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[i], 0, nullptr);
 
@@ -2231,6 +2304,8 @@ private:
 
 	bool framebufferResized = false;
 
+	std::vector<jVertex> vertices;
+	std::vector<uint32_t> indices;
 	VkBuffer vertexBuffer;
 	VkDeviceMemory vertexBufferMemory;
 	VkBuffer indexBuffer;
