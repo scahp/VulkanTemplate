@@ -1,4 +1,15 @@
-﻿// https://vulkan-tutorial.com/en/Texture_mapping/Images Transition barrier masks
+﻿// https://vulkan-tutorial.com/
+//////////////////////////////////////////////////////////////////////////
+// 기본 예제는 끝났고 아래의 내용을 탐구해보자
+// 1. Push constants
+// 2. Instanced rendering
+// 3. Dynamic uniforms
+// 4. Separate imagesand sampler descriptors
+// 5. Pipeline cache
+// 6. Multi - threaded command buffer generation
+// 7. Multiple subpasses
+// 8. Compute shaders
+//////////////////////////////////////////////////////////////////////////
 
 #include <pch.h>
 
@@ -276,19 +287,20 @@ private:
 		CreateDescriptorSetLayout();// 9
 		CreateGraphicsPipeline();	// 10
 		CreateCommandPool();		// 11
-		CreateDepthResources();		// 12
-		CreateFrameBuffers();		// 13
-		CreateTextureImage();		// 14
-		CreateTextureImageView();	// 15
-		CreateTextureSampler();		// 16
-		LoadModel();				// 17
-		CreateVertexBuffer();		// 18
-		CreateIndexBuffer();		// 19
-		CreateUniformBuffers();		// 20
-		CreateDescriptorPool();		// 21
-		CreateDescriptorSets();		// 22
-		CreateCommandBuffers();		// 23
-		CreateSyncObjects();		// 24
+		CreateColorResources();		// 12
+		CreateDepthResources();		// 13
+		CreateFrameBuffers();		// 14
+		CreateTextureImage();		// 15
+		CreateTextureImageView();	// 16
+		CreateTextureSampler();		// 17
+		LoadModel();				// 18
+		CreateVertexBuffer();		// 19
+		CreateIndexBuffer();		// 20
+		CreateUniformBuffers();		// 21
+		CreateDescriptorPool();		// 22
+		CreateDescriptorSets();		// 23
+		CreateCommandBuffers();		// 24
+		CreateSyncObjects();		// 25
 	}
 
 	void MainLoop()
@@ -501,6 +513,7 @@ private:
 			if (IsDeviceSuitable(device))
 			{
 				physicalDevice = device;
+				msaaSamples = GetMaxUsableSampleCount();
 				break;
 			}
 		}
@@ -598,6 +611,7 @@ private:
 
 		VkPhysicalDeviceFeatures deviceFeatures = {};
 		deviceFeatures.samplerAnisotropy = VK_TRUE;		// VkSampler 가 Anisotropy 를 사용할 수 있도록 하기 위해 true로 설정
+		deviceFeatures.sampleRateShading = VK_TRUE;		// Sample shading 켬	 (텍스쳐 내부에 있는 aliasing 도 완화 해줌)
 
 		VkDeviceCreateInfo createInfo = {};
 		createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -817,7 +831,7 @@ private:
 	{
 		VkAttachmentDescription colorAttachment = {};
 		colorAttachment.format = swapChainImageFormat;
-		colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;	// 멀티샘플링은 하지 않고 있으므로 1개의 샘플만
+		colorAttachment.samples = msaaSamples;
 
 		// 아래 2가지 옵션은 렌더링 전, 후에 attachment에 있는 데이터에 무엇을 할지 결정하는 부분.
 		// 1). loadOp
@@ -843,8 +857,27 @@ private:
 		colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;			// RenderPass가 시작되기 전에 어떤 Image 레이아웃을 가지고 있을지 여부를 지정
 																			// VK_IMAGE_LAYOUT_UNDEFINED 은 이전 이미지 레이아웃을 무시한다는 의미.
 																			// 주의할 점은 이미지의 내용이 보존되지 않습니다. 그러나 현재는 이미지를 Clear할 것이므로 보존할 필요가 없음.
-		colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;		// RenderPass가 끝날때 자동으로 전환될 Image 레이아웃을 정의함
-																			// 우리는 렌더링 결과를 스왑체인에 제출할 것이기 때문에 VK_IMAGE_LAYOUT_PRESENT_SRC_KHR 사용
+
+		//colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;		// RenderPass가 끝날때 자동으로 전환될 Image 레이아웃을 정의함
+		//																	// 우리는 렌더링 결과를 스왑체인에 제출할 것이기 때문에 VK_IMAGE_LAYOUT_PRESENT_SRC_KHR 사용
+
+		// MSAA 를 사용하게 되면, Swapchain에 제출전에 resolve 를 해야하므로, 아래와 같이 final layout 을 변경해줌.
+		// 그리고 reoslve를 위한 VkAttachmentDescription 을 추가함. depth buffer의 경우는 Swapchain에 제출하지 않기 때문에 이 과정이 필요없음.
+		colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		VkAttachmentDescription colorAttachmentResolve = {};
+		colorAttachmentResolve.format = swapChainImageFormat;
+		colorAttachmentResolve.samples = VK_SAMPLE_COUNT_1_BIT;
+		colorAttachmentResolve.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		colorAttachmentResolve.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		colorAttachmentResolve.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		colorAttachmentResolve.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		colorAttachmentResolve.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		colorAttachmentResolve.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+		VkAttachmentReference colorAttachmentResolveRef = {};
+		colorAttachmentResolveRef.attachment = 2;
+		colorAttachmentResolveRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
 		// Subpasses
 		// 하나의 렌더링패스에는 여러개의 서브렌더패스가 존재할 수 있다. 예를 들어서 포스트프로세스를 처리할때 여러 포스트프로세스를 
@@ -860,7 +893,7 @@ private:
 
 		VkAttachmentDescription depthAttachment = {};
 		depthAttachment.format = FindDepthFormat();
-		depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+		depthAttachment.samples = msaaSamples;
 		depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 		depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;					// 현재는 렌더링을 할때 말고는 쓰는데가 없으므로 DontCare
 		depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -877,8 +910,9 @@ private:
 		subpass.colorAttachmentCount = 1;
 		subpass.pColorAttachments = &colorAttachmentRef;
 		subpass.pDepthStencilAttachment = &depthAttachmentRef;
+		subpass.pResolveAttachments = &colorAttachmentResolveRef;
 
-		std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, depthAttachment };
+		std::array<VkAttachmentDescription, 3> attachments = { colorAttachment, depthAttachment, colorAttachmentResolve };
 
 		VkRenderPassCreateInfo renderPassInfo = {};
 		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -1044,9 +1078,9 @@ private:
 		// 현재는 사용하지 않음
 		VkPipelineMultisampleStateCreateInfo multisampling = {};
 		multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-		multisampling.sampleShadingEnable = VK_FALSE;
-		multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-		multisampling.minSampleShading = 1.0f;				// Optional
+		multisampling.rasterizationSamples = msaaSamples;
+		multisampling.sampleShadingEnable = VK_TRUE;		// Sample shading 켬	 (텍스쳐 내부에 있는 aliasing 도 완화 해줌)
+		multisampling.minSampleShading = 0.2f;
 		multisampling.pSampleMask = nullptr;				// Optional
 		multisampling.alphaToCoverageEnable = VK_FALSE;		// Optional
 		multisampling.alphaToOneEnable = VK_FALSE;			// Optional
@@ -1200,7 +1234,7 @@ private:
 		for (size_t i = 0; i < swapChainImageViews.size(); ++i)
 		{
 			// DepthBuffer는 같은 것을 씀. 세마포어 때문에 한번에 1개의 subpass 만 실행되기 때문.
-			std::array<VkImageView, 2> attachments = { swapChainImageViews[i], depthImageView };
+			std::array<VkImageView, 3> attachments = { colorImageView, depthImageView, swapChainImageViews[i] };
 
 			VkFramebufferCreateInfo framebufferInfo = {};
 			framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -1298,7 +1332,7 @@ private:
 	{
 		VkFormat depthFormat = FindDepthFormat();
 
-		if (!ensure(CreateImage(swapChainExtent.width, swapChainExtent.height, 1, depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+		if (!ensure(CreateImage(swapChainExtent.width, swapChainExtent.height, 1, msaaSamples, depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
 			, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, depthImage, depthImageMemory)))
 		{
 			return false;
@@ -1334,7 +1368,7 @@ private:
 
 		stbi_image_free(pixels);
 
-		if (!ensure(CreateImage(static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), textureMipLevels, VK_FORMAT_R8G8B8A8_UNORM
+		if (!ensure(CreateImage(static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), textureMipLevels, VK_SAMPLE_COUNT_1_BIT, VK_FORMAT_R8G8B8A8_UNORM
 			, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT
 									| VK_IMAGE_USAGE_SAMPLED_BIT	// image를 shader 에서 접근가능하게 하고 싶은 경우
 			, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, textureImage, textureImageMemory)))
@@ -1566,7 +1600,7 @@ private:
 		return true;
 	}
 
-	bool CreateImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage
+	bool CreateImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage
 		, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory)
 	{
 		VkImageCreateInfo imageInfo = {};
@@ -1596,7 +1630,7 @@ private:
 		imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		imageInfo.usage = usage;
 
-		imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;	// Multisampling 안하므로 샘플 개수는 1개
+		imageInfo.samples = numSamples;
 		imageInfo.flags = 0;		// Optional
 									// Sparse image 에 대한 정보를 설정가능
 									// Sparse image는 특정 영역의 정보를 메모리에 담아두는 것임. 예를들어 3D image의 경우
@@ -2209,6 +2243,10 @@ private:
 
 	void CleanupSwapChain()
 	{
+		vkDestroyImageView(device, colorImageView, nullptr);
+		vkDestroyImage(device, colorImage, nullptr);
+		vkFreeMemory(device, colorImageMemory, nullptr);
+
 		vkDestroyImageView(device, depthImageView, nullptr);
 		vkDestroyImage(device, depthImage, nullptr);
 		vkFreeMemory(device, depthImageMemory, nullptr);
@@ -2256,6 +2294,7 @@ private:
 		CreateGraphicsPipeline();	// 가끔 image format 이 다르기도 함.
 									// Viewport나 Scissor Rectangle size 가 Graphics Pipeline 에 있으므로 재생성.
 									// (DynamicState로 Viewport 와 Scissor 사용하고 변경점이 이것 뿐이면 재생성 피할수 있음)
+		CreateColorResources();
 		CreateDepthResources();
 		CreateFrameBuffers();		// Swapchain images 과 연관 있어서 다시 만듬
 		CreateUniformBuffers();
@@ -2323,6 +2362,36 @@ private:
 		vkMapMemory(device, uniformBuffersMemory[currentImage], 0, sizeof(ubo), 0, &data);
 		memcpy(data, &ubo, sizeof(ubo));
 		vkUnmapMemory(device, uniformBuffersMemory[currentImage]);
+	}
+
+	VkSampleCountFlagBits GetMaxUsableSampleCount()
+	{
+		VkPhysicalDeviceProperties physicalDeviceProperties;
+		vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
+
+		VkSampleCountFlags counts = physicalDeviceProperties.limits.framebufferColorSampleCounts & physicalDeviceProperties.limits.framebufferDepthSampleCounts;
+		if (counts & VK_SAMPLE_COUNT_64_BIT) { return VK_SAMPLE_COUNT_64_BIT; }
+		if (counts & VK_SAMPLE_COUNT_32_BIT) { return VK_SAMPLE_COUNT_32_BIT; }
+		if (counts & VK_SAMPLE_COUNT_16_BIT) { return VK_SAMPLE_COUNT_16_BIT; }
+		if (counts & VK_SAMPLE_COUNT_8_BIT) { return VK_SAMPLE_COUNT_8_BIT; }
+		if (counts & VK_SAMPLE_COUNT_4_BIT) { return VK_SAMPLE_COUNT_4_BIT; }
+		if (counts & VK_SAMPLE_COUNT_2_BIT) { return VK_SAMPLE_COUNT_2_BIT; }
+
+		return VK_SAMPLE_COUNT_1_BIT;
+	}
+
+	bool CreateColorResources()
+	{
+		VkFormat colorFormat = swapChainImageFormat;
+
+		if (!ensure(CreateImage(swapChainExtent.width, swapChainExtent.height, 1, msaaSamples, colorFormat, VK_IMAGE_TILING_OPTIMAL
+			, VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, colorImage, colorImageMemory)))
+		{
+			return false;
+		}
+		colorImageView = CreateImageView(colorImage, colorFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+
+		return true;
 	}
 
 	GLFWwindow* window = nullptr;
@@ -2424,6 +2493,11 @@ private:
 	VkImage depthImage;
 	VkDeviceMemory depthImageMemory;
 	VkImageView depthImageView;
+
+	VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_1_BIT;
+	VkImage colorImage;
+	VkDeviceMemory colorImageMemory;
+	VkImageView  colorImageView;
 };
 
 int main()
